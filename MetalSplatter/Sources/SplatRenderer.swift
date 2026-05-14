@@ -299,6 +299,14 @@ public final class SplatRenderer: @unchecked Sendable {
         }
     }
 
+    /// SplatLab patch: stop the SplatSorter's detached sort loop so the
+    /// renderer + sorter + their MetalBuffer pool can drop their retain
+    /// when ARC releases them. Without this the loop runs forever and
+    /// keeps the entire splat graph alive.
+    deinit {
+        sorter.shutdown()
+    }
+
     // MARK: - Chunk Management
 
     /// Adds a chunk to the renderer. The chunk should not be modified after this method returns, except during withChunkAccess {...}.

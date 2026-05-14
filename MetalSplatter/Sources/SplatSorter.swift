@@ -494,6 +494,13 @@ class SplatSorter: @unchecked Sendable {
 
     // MARK: - Sort Loop
 
+    // SplatLab patch: keep the detached sort Task addressable so we can
+    // cancel it from `shutdown()`. Without this, sortLoop's `while
+    // !Task.isCancelled` runs forever and the method's implicit `self`
+    // strong-retains the SplatSorter past SplatRenderer release, leaking
+    // ~580 KB host + ~250 MB GPU per train→view→close cycle.
+    private var sortTask: Task<Void, Never>?
+
     private func ensureSortLoopRunning() {
         let shouldStart = state.withLock { state -> Bool in
             if state.sortLoopRunning {
@@ -504,10 +511,17 @@ class SplatSorter: @unchecked Sendable {
         }
 
         if shouldStart {
-            Task.detached(priority: .high) { [weak self] in
+            sortTask = Task.detached(priority: .high) { [weak self] in
                 await self?.sortLoop()
             }
         }
+    }
+
+    /// SplatLab patch: cancel the in-flight sort Task so the SplatSorter can
+    /// finally be released.
+    func shutdown() {
+        sortTask?.cancel()
+        sortTask = nil
     }
 
     private func sortLoop() async {
